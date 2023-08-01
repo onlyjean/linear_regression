@@ -16,20 +16,16 @@ from sklearn.model_selection import train_test_split
 from datetime import timedelta
 import boto3
 import os
-import json
 import math
 import mlflow
 import mlflow.sklearn
+from dotenv import load_dotenv
 
-
-
-with open('/Users/cedrix/Documents/aws.json', 'r') as f:
-    credentials = json.load(f)
+load_dotenv()  # take environment variables from .env.
 
 # Set environment variables
-os.environ['AWS_ACCESS_KEY_ID'] = credentials ['AWS_ACCESS_KEY_ID']
-os.environ['AWS_SECRET_ACCESS_KEY'] = credentials ['AWS_SECRET_ACCESS_KEY']
-
+access_key = os.getenv('AWS_ACCESS_KEY_ID')
+secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 # AWS S3 bucket
 bucket = 'raw-stock-price'
 
@@ -37,7 +33,7 @@ bucket = 'raw-stock-price'
   
 def load_data_from_s3(stock_name):
     file_name = f'yhoofinance-daily-historical-data/{stock_name}_daily_data.csv'
-    s3 = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET_ACCESS_KEY'])
+    s3 = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_key)   
     obj = s3.get_object(Bucket=bucket, Key=file_name)
     df = pd.read_csv(obj['Body'])
     return df
