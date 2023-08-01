@@ -241,20 +241,12 @@ def run_model(stock_name, ma_window=5, ema_window=5, sto_window=5, features=['MA
 
 def main():
     st.set_option('deprecation.showPyplotGlobalUse', False)
-    #st.sidebar.image('/Users/cedrix/Downloads/futurstox-high-resolution-logo-white-on-transparent-background.png', width=200)
+      
+    # Display the image using Streamlit with HTML to center it
+    col1, col2, col3 = st.sidebar.columns([1,2,1])
+    with col1:
+        st.image("assets/futurstox-high-resolution-logo-white-on-transparent-background.png", width=250)
 
-
-    with open("/Users/cedrix/Downloads/futurstox-high-resolution-logo-white-on-transparent-background.png", "rb") as img_file:
-        logo_img = base64.b64encode(img_file.read()).decode("utf-8")
-        
-    st.sidebar.markdown(
-        f"""
-        <div style="text-align: center;">
-            <img src='data:image/png;base64,{logo_img}' style='height: 200px;'>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     st.title('Linear Regression Stock Price Prediction')
 
