@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[27]:
-
 
 import streamlit as st
-
+import uuid
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -23,6 +21,7 @@ import mlflow.sklearn
 from datetime import datetime
 from utils import  comms  # Make sure you have this utils module with db.py file
 from dotenv import load_dotenv
+
 
 load_dotenv()  # take environment variables from .env.
 
@@ -74,7 +73,7 @@ def add_feature(df, feature, window):
     return df
 
  
-def train_model(df, future_days, test_size):
+def train_model(df, future_days, test_size, ma_window, ema_window, sto_window, alpha, features, stock_name):
     try:
     
         # Apply shift operation
@@ -109,11 +108,21 @@ def train_model(df, future_days, test_size):
             mse = mean_squared_error(y_test, model.predict(X_test))
             mape = mean_absolute_percentage_error(y_test, model.predict(X_test))
 
-            mlflow.log_metric("rmse", rmse)
-            mlflow.log_metric("mse", mse)
-            mlflow.log_metric("mape", mape)
+            mlflow.log_metric("RMSE", rmse)
+            mlflow.log_metric("MSE", mse)
+            mlflow.log_metric("MAPE", mape)
+
+            # Log additional parameters
+            mlflow.log_param("MA", ma_window)
+            mlflow.log_param("EMA", ema_window)
+            mlflow.log_param("STO", sto_window)
+            mlflow.log_param("Alpha", alpha)
+            mlflow.log_param("Features", features)
+            mlflow.log_param("Stock Name", stock_name)
 
 
+            # Tag the run with the user ID
+            mlflow.set_tag("user_id", st.session_state.user_id)
 
         model.fit(X_train, y_train)
 
@@ -213,7 +222,7 @@ def run_model(stock_name, ma_window=5, ema_window=5, sto_window=5, features=['MA
                 df = add_feature(df, feature, feature_windows[feature])
             #st.write(df)
 
-        model, X_train, X_test, y_train, y_test, X_predict = train_model(df, future_days, test_size)
+        model, X_train, X_test, y_train, y_test, X_predict = train_model(df, future_days, test_size, ma_window, ema_window, sto_window, alpha, features, stock_name)
         st.write(f"Trained model: {model}")  
 
         # Train model and evaluate
@@ -225,7 +234,6 @@ def run_model(stock_name, ma_window=5, ema_window=5, sto_window=5, features=['MA
         if mape:
             evaluations['mape'] = evaluate_model(model, X_test, y_test, 'mape')
 
-        #st.write(f"Evaluations: {evaluations}")
 
         # Generate prediction
         linear_model_real_prediction = model.predict(np.array(df.drop(['Prediction'], 1)))
@@ -238,11 +246,14 @@ def run_model(stock_name, ma_window=5, ema_window=5, sto_window=5, features=['MA
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
-    # Always return a tuple of three elements
     return model, evaluations, df
 
 def main():
     st.set_option('deprecation.showPyplotGlobalUse', False)
+
+    # Generate a unique ID for the user session
+    if "user_id" not in st.session_state:
+        st.session_state.user_id = str(uuid.uuid4())
       
     # Display the image using Streamlit with HTML to center it
     col1, col2, col3 = st.sidebar.columns([1,2,1])
@@ -321,6 +332,44 @@ def main():
         else:
             st.error('An error occurred during model training')
 
+
+    if st.sidebar.button('Compare with Previous Performance'):
+        runs = mlflow.search_runs(filter_string=f"tags.user_id = '{st.session_state.user_id}'")
+        if len(runs) < 2:
+            st.error("There are not enough runs to compare.")
+        else:
+            current_run = runs.iloc[0]
+            previous_run = runs.iloc[1]
+
+            # Get all parameter and metric columns
+            param_cols = [col for col in current_run.index if col.startswith("params.")]
+            metric_cols = [col for col in current_run.index if col.startswith("metrics.")]
+
+            current_params = pd.DataFrame(current_run[param_cols]).T
+            current_params.columns = [col.replace("params.", "") for col in current_params.columns]
+            current_metrics = pd.DataFrame(current_run[metric_cols]).T
+            current_metrics.columns = [col.replace("metrics.", "") for col in current_metrics.columns]
+
+            previous_params = pd.DataFrame(previous_run[param_cols]).T
+            previous_params.columns = [col.replace("params.", "") for col in previous_params.columns]
+            previous_metrics = pd.DataFrame(previous_run[metric_cols]).T
+            previous_metrics.columns = [col.replace("metrics.", "") for col in previous_metrics.columns]
+
+            # Display the parameters and metrics of the current and previous runs
+            st.header("Current Run:")
+            st.write("**Parameters**:")
+            st.table(current_params)
+            st.write("**Metrics**:")
+            st.table(current_metrics)
+
+            st.header("*Previous Run*:")
+            st.write("**Parameters**:")
+            st.table(previous_params)
+            st.write("**Metrics**:")
+            st.table(previous_metrics)
+
+
+
     # Display explanations on the main page
     if explanations:
         st.markdown('## Explanations')
@@ -368,9 +417,6 @@ def main():
             if "just_posted" not in st.session_state:
                 st.session_state["just_posted"] = True
             st.experimental_rerun()
-
-
-
 
 
 if __name__ == '__main__':
