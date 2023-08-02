@@ -16,9 +16,13 @@ from sklearn.model_selection import train_test_split
 from datetime import timedelta
 import boto3
 import os
+from io import StringIO
 import math
 import mlflow
 import mlflow.sklearn
+from datetime import datetime
+import streamlit as st
+from utils import db  # Make sure you have this utils module with db.py file
 from dotenv import load_dotenv
 
 load_dotenv()  # take environment variables from .env.
@@ -26,15 +30,23 @@ load_dotenv()  # take environment variables from .env.
 # Set environment variables
 access_key = os.getenv('AWS_ACCESS_KEY_ID')
 secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-# AWS S3 bucket
-bucket = 'raw-stock-price'
+# AWS S3 stock bucket
+stock_bucket = 'raw-stock-price'
+# AWS S3 comment-section bucket
+comment_bucket = 'comment-section-st'
+
+def space(n: int):
+    """Function to add space in Streamlit layout."""
+    for _ in range(n):
+        st.text('')
+
 
 # Load data from S3
   
 def load_data_from_s3(stock_name):
     file_name = f'yhoofinance-daily-historical-data/{stock_name}_daily_data.csv'
     s3 = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_key)   
-    obj = s3.get_object(Bucket=bucket, Key=file_name)
+    obj = s3.get_object(Bucket=stock_bucket, Key=file_name)
     df = pd.read_csv(obj['Body'])
     return df
 
@@ -232,9 +244,6 @@ def run_model(stock_name, ma_window=5, ema_window=5, sto_window=5, features=['MA
     # Always return a tuple of three elements
     return model, evaluations, df
 
-# In[34]:
-
-
 def main():
     st.set_option('deprecation.showPyplotGlobalUse', False)
       
@@ -274,10 +283,6 @@ def main():
         alpha = 0.5
         features = ['adj_close']
 
-    
-
-
-
     if st.sidebar.button('Train Model'):
         file_name = load_data_from_s3(stock_name)
         st.markdown('## Training Model...')
@@ -295,6 +300,7 @@ def main():
             display_at=display_at,
             alpha=alpha
         )
+
 
         if model is not None and evaluations is not None and df is not None:
             # Display evaluation metrics in multiple columns
@@ -330,6 +336,74 @@ def main():
         st.markdown('- **Moving Average**: This is the average stock price over the specified window of days. It helps to smooth out price fluctuations and highlight the overall trend.')
         st.markdown('- **Exponential Moving Average Window Size**: Similar to the moving average, but it gives more weight to recent prices. This makes it react more quickly to price changes..')
         st.markdown('- **Stochastic Oscillator Window Size**: This is a momentum indicator that compares a particular closing price of a stock to a range of its prices over a certain period of time. The sensitivity of the oscillator to market movements is reducible by adjusting that time period or by taking a moving average of the result..')
+
+
+     # Connect to the S3 bucket
+    s3 = db.connect()
+    comment_bucket = 'comment-section-st'
+    file_name = 'linear_regression_comment/comments.csv'
+
+
+    # The rest of your code...
+
+    if "comments" not in st.session_state:
+        st.session_state.comments = db.collect(s3, comment_bucket, file_name)
+    comments = st.session_state.comments
+
+    with st.expander("💬 Open comments"):
+        # Show comments
+        st.write("**Comments:**")
+
+        for index, entry in enumerate(comments.itertuples()):
+            st.markdown(f"**{entry.name}** ({entry.date}):\n\n&nbsp;\n\n&emsp;{entry.comment}\n\n---")
+
+            with st.form(f'form_{index}'):
+    # Add buttons to edit or delete each comment
+                edit_button = st.form_submit_button(f'Edit comment {index}')
+                delete_button = st.form_submit_button(f'Delete comment {index}')
+
+                # Ask the user to confirm their username
+                username = st.text_input(f'Enter your username to confirm for comment {index}')
+
+                if edit_button:
+                    if username == entry.name:
+                        # Allow the user to edit their comment
+                        new_comment = st.text_input('Enter your new comment')
+                        if st.form_submit_button('Update comment'):
+                            db.update(s3, comment_bucket, file_name, index, new_comment)
+                            db.write_to_s3(s3, comment_bucket, file_name, st.session_state.comments)
+                            st.experimental_rerun()
+                    else:
+                        st.error('Incorrect username')
+
+                if delete_button:
+                    if username == entry.name:
+                        # Delete the comment from your database
+                        if st.form_submit_button('Confirm delete'):
+                            db.delete(s3, comment_bucket, file_name, index)
+                            db.write_to_s3(s3, comment_bucket, file_name, st.session_state.comments)
+                            st.experimental_rerun()
+                    else:
+                        st.error('Incorrect username')
+
+
+
+        # Insert comment
+        st.write("**Add your own comment:**")
+        form = st.form("comment")
+        name = form.text_input("Name")
+        comment = form.text_area("Comment")
+        submit = form.form_submit_button("Add comment")
+
+        if submit:
+            date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            db.insert(s3, comment_bucket, file_name, [name, comment, date])
+            if "just_posted" not in st.session_state:
+                st.session_state["just_posted"] = True
+            st.experimental_rerun()
+
+
+
 
 if __name__ == '__main__':
     main()
