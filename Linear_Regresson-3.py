@@ -21,8 +21,7 @@ import math
 import mlflow
 import mlflow.sklearn
 from datetime import datetime
-import streamlit as st
-from utils import db  # Make sure you have this utils module with db.py file
+from utils import  comms  # Make sure you have this utils module with db.py file
 from dotenv import load_dotenv
 
 load_dotenv()  # take environment variables from .env.
@@ -169,8 +168,6 @@ def plot_results(df, linear_model_real_prediction, linear_model_predict_predicti
     if '%D' in df.columns:
         ax.plot(df.index[display_at:], df['%D'][display_at:], label='%D', color='blue', alpha=alpha, linewidth=10.0)
 
-    
-        
 
     # Format the x-axis dates
     date_format = DateFormatter("%Y-%m-%d")
@@ -253,7 +250,7 @@ def main():
         st.image("assets/futurstox-high-resolution-logo-white-on-transparent-background.png", width=250)
 
 
-    st.title('Linear Regression Stock Price Prediction')
+    st.title('Stock Price Prediction with Linear Regression')
 
     st.sidebar.markdown('# Parameters')
     stock_name = st.sidebar.selectbox("Select a stock", ("AAPL", "GOOGL", "MSFT", "AMZN","TSLA","META", "NFLX", "NVDA"), help="Select the stock for which you want to predict the price.")
@@ -267,6 +264,7 @@ def main():
 
 
     # Advanced Settings
+    explanations = st.checkbox('Show Explanations')
     advanced_settings = st.sidebar.checkbox('Advanced Settings')
     if advanced_settings:
         ma_window = st.sidebar.slider('Moving Avg. -- Window Size', 1, 100, 50, help="Select the window size for the moving average.")
@@ -323,32 +321,26 @@ def main():
         else:
             st.error('An error occurred during model training')
 
-             # Display explanations on the main page
-    st.markdown('## Explanations')
-    st.markdown('**Evaluation Metrics**: Measures used to assess how well the model\'s predictions match the actual values.')
-    st.markdown('- **RMSE (Root Mean Squared Error)**: A measure of the differences between the values predicted by the model and the actual values. Smaller values are better, with 0 being a perfect match.')
-    st.markdown('- **MSE (Mean Squared Error)**: Similar to RMSE, but without taking the square root. This means larger errors are more heavily penalized.')
-    st.markdown('- **MAPE (Mean Absolute Percentage Error)**: The average of the absolute percentage differences between the predicted and actual values. It gives an idea of the error rate in terms of the actual values.')
-    
-    if advanced_settings:
-        st.markdown('**Alpha**: This is a value that helps determine how much weight the model gives to recent data points. A smaller alpha means the model considers older data more heavily, while a larger alpha means the model focuses more on recent data.')
-        st.markdown('**Window Size**: This is the number of consecutive data points used to calculate the feature. For example, if the window size is 5, the feature for the current day will be calculated using the data from the current day and the 4 previous days:')
-        st.markdown('- **Moving Average**: This is the average stock price over the specified window of days. It helps to smooth out price fluctuations and highlight the overall trend.')
-        st.markdown('- **Exponential Moving Average Window Size**: Similar to the moving average, but it gives more weight to recent prices. This makes it react more quickly to price changes..')
-        st.markdown('- **Stochastic Oscillator Window Size**: This is a momentum indicator that compares a particular closing price of a stock to a range of its prices over a certain period of time. The sensitivity of the oscillator to market movements is reducible by adjusting that time period or by taking a moving average of the result..')
+    # Display explanations on the main page
+    if explanations:
+        st.markdown('## Explanations')
+        st.markdown('**Evaluation Metrics**: Measures used to assess how well the model\'s predictions match the actual values.')
+        st.markdown('- **RMSE (Root Mean Squared Error)**: A measure of the differences between the values predicted by the model and the actual values. Smaller values are better, with 0 being a perfect match.')
+        st.markdown('- **MSE (Mean Squared Error)**: Similar to RMSE, but without taking the square root. This means larger errors are more heavily penalized.')
+        st.markdown('- **MAPE (Mean Absolute Percentage Error)**: The average of the absolute percentage differences between the predicted and actual values. It gives an idea of the error rate in terms of the actual values.')
+        if advanced_settings:
+            st.markdown('**Alpha**: This is a value that helps determine how much weight the model gives to recent data points. A smaller alpha means the model considers older data more heavily, while a larger alpha means the model focuses more on recent data.')
+            st.markdown('**Window Size**: This is the number of consecutive data points used to calculate the feature. For example, if the window size is 5, the feature for the current day will be calculated using the data from the current day and the 4 previous days:')
+            st.markdown('- **Moving Average**: This is the average stock price over the specified window of days. It helps to smooth out price fluctuations and highlight the overall trend.')
+            st.markdown('- **Exponential Moving Average Window Size**: Similar to the moving average, but it gives more weight to recent prices. This makes it react more quickly to price changes..')
+            st.markdown('- **Stochastic Oscillator Window Size**: This is a momentum indicator that compares a particular closing price of a stock to a range of its prices over a certain period of time. The sensitivity of the oscillator to market movements is reducible by adjusting that time period or by taking a moving average of the result..')
 
 
      # Connect to the S3 bucket
-    s3 = db.connect()
+    s3 = comms.connect()
     comment_bucket = 'comment-section-st'
     file_name = 'linear_regression_comment/comments.csv'
-
-
-    # The rest of your code...
-
-    if "comments" not in st.session_state:
-        st.session_state.comments = db.collect(s3, comment_bucket, file_name)
-    comments = st.session_state.comments
+    comments = comms.collect(s3, comment_bucket, file_name)
 
     with st.expander("💬 Open comments"):
         # Show comments
@@ -357,36 +349,11 @@ def main():
         for index, entry in enumerate(comments.itertuples()):
             st.markdown(f"**{entry.name}** ({entry.date}):\n\n&nbsp;\n\n&emsp;{entry.comment}\n\n---")
 
-            with st.form(f'form_{index}'):
-    # Add buttons to edit or delete each comment
-                edit_button = st.form_submit_button(f'Edit comment {index}')
-                delete_button = st.form_submit_button(f'Delete comment {index}')
 
-                # Ask the user to confirm their username
-                username = st.text_input(f'Enter your username to confirm for comment {index}')
-
-                if edit_button:
-                    if username == entry.name:
-                        # Allow the user to edit their comment
-                        new_comment = st.text_input('Enter your new comment')
-                        if st.form_submit_button('Update comment'):
-                            db.update(s3, comment_bucket, file_name, index, new_comment)
-                            db.write_to_s3(s3, comment_bucket, file_name, st.session_state.comments)
-                            st.experimental_rerun()
-                    else:
-                        st.error('Incorrect username')
-
-                if delete_button:
-                    if username == entry.name:
-                        # Delete the comment from your database
-                        if st.form_submit_button('Confirm delete'):
-                            db.delete(s3, comment_bucket, file_name, index)
-                            db.write_to_s3(s3, comment_bucket, file_name, st.session_state.comments)
-                            st.experimental_rerun()
-                    else:
-                        st.error('Incorrect username')
-
-
+            is_last = index == len(comments) - 1
+            is_new = "just_posted" in st.session_state and is_last
+            if is_new:
+                st.success("☝️ Your comment was successfully posted.")
 
         # Insert comment
         st.write("**Add your own comment:**")
@@ -397,10 +364,11 @@ def main():
 
         if submit:
             date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            db.insert(s3, comment_bucket, file_name, [name, comment, date])
+            comment.insert(s3, comment_bucket, file_name, [name, comment, date])
             if "just_posted" not in st.session_state:
                 st.session_state["just_posted"] = True
             st.experimental_rerun()
+
 
 
 

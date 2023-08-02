@@ -37,17 +37,6 @@ def insert(s3, comment_bucket, file_name, row) -> None:
     s3_resource = boto3.resource('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_key)
     s3_resource.Object(comment_bucket, file_name).put(Body=csv_buffer.getvalue())
 
-
-def update(s3, comment_bucket, file_name, row_index, new_comment) -> None:
-    comments = st.session_state.comments
-    comments.loc[row_index, 'comment'] = new_comment
-    st.session_state.comments = comments
-
-def delete(s3, comment_bucket, file_name, row_index) -> None:
-    comments = st.session_state.comments
-    comments = comments.drop(row_index)
-    st.session_state.comments = comments
-
 def write_to_s3(s3, comment_bucket, file_name, comments) -> None:
     csv_buffer = StringIO()
     comments.to_csv(csv_buffer)
